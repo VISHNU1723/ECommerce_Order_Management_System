@@ -1,12 +1,15 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.order import Order
 from app.models.return_request import ReturnRequest
 from app.schemas.return_schema import ReturnCreate, ReturnResponse
+from app.models.customer import Customer
+from app.services.email_service import send_email
+
 
 router = APIRouter(
     prefix="/returns",
@@ -98,6 +101,7 @@ def update_return_status(
     return_id: int,
     status: str,
     rejection_reason: Optional[str] = None,
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
     return_request = db.query(ReturnRequest).filter(
@@ -133,6 +137,21 @@ def update_return_status(
 
     if status == "Rejected":
         return_request.rejection_reason = rejection_reason
+
+    if status == "Refunded":
+        customer = db.query(Customer).filter(
+            Customer.id == return_request.customer_id
+        ).first()
+
+        if customer:
+            background_tasks.add_task(
+                send_email,
+                customer.email,
+                "Refund Processed",
+                f"Your refund for order {return_request.order_id} "
+                f"has been processed successfully. "
+                f"Refund amount: ₹{return_request.refund_amount}"
+            )
 
     db.commit()
     db.refresh(return_request)

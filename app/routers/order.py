@@ -225,6 +225,7 @@ def cancel_order(
 def update_order_status(
     order_id: int,
     status: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     order = db.query(Order).filter(
@@ -258,6 +259,15 @@ def update_order_status(
 
     db.commit()
     db.refresh(order)
+
+    if status == "Shipped":
+        background_tasks.add_task(
+            send_email,
+            order.customer.email,
+            "Order Shipped",
+            f"Your order {order.order_number} has been shipped successfully."
+    )
+
 
     return order
 
